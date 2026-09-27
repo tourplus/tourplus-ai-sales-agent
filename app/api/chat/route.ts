@@ -40,6 +40,6 @@ export async function POST(req:Request){try{
  const client=new OpenAI({apiKey:process.env.OPENAI_API_KEY});
  const c=await client.chat.completions.create({model:process.env.OPENAI_MODEL||"gpt-5.6-luna",messages:[{role:"system",content:system},...messages.map((m:any)=>({role:m.role==="agent"?"assistant":"user",content:String(m.text)}))]});
  const reply=c.choices[0]?.message?.content||"Our reservation team will assist you.";
- const savedLeadId=await saveLead(client,messages,reply,leadId);
+ const savedLeadId=await saveLead(client,messages,reply,leadId);if(savedLeadId){try{const newest=messages[messages.length-1];await supabase("messages",{method:"POST",body:JSON.stringify([{lead_id:savedLeadId,role:"customer",content:String(newest?.text||"")},{lead_id:savedLeadId,role:"agent",content:reply}])})}catch(e:any){console.error("Message sync error:",e?.message)}}
  return NextResponse.json({reply,leadId:savedLeadId});
 }catch(e:any){console.error("Tourplus chat API error:",e?.status,e?.code,e?.message);return NextResponse.json({reply:"I’m having trouble processing that right now. Our reservation team can assist you."},{status:500})}}
