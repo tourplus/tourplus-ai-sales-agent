@@ -1,45 +1,70 @@
-import OpenAI from"openai";import{NextResponse}from"next/server";import{supabase}from"../../../lib/supabase";
+import OpenAI from "openai";
+import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
+import { system } from "../../../lib/chat-prompt";
+import { customerMessage, extractedFields } from "../../../lib/chat-validation";
+import { CHAT_COOKIE, consumeLimit, hashToken, jsonRows, newToken, requestKey } from "../../../lib/public-chat";
 
-const system=`You are Tourplus AI Reservation & Sales Assistant. V1 supports Airport Transfer and Malaysia 12-seat Executive Business Coaster. Be concise, warm and professional. Collect trip date, pax, pickup, destination, duration/itinerary; for airport transfers also flight number and luggage when relevant. NEVER invent prices or availability.
+export const maxDuration = 60;
+const respond = (body: object, status = 200) => NextResponse.json(body, { status, headers: { "Cache-Control": "private, no-store" } });
 
-OFFICIAL TRAVEL-AGENCY CONTRACT RATES (MYR):
-- 8 hours / 100 km: RM1,800
-- 10 hours Kuala Lumpur city use: RM2,500
-- 10 hours Kuala Lumpur outstation/interstate use: RM3,500
-- Kuala Lumpur airport transfer + 5 hours vehicle use: RM2,500
-- Kuala Lumpur airport transfer: RM1,500 per trip
-- Overtime: RM250/hour
-- Extra mileage: RM5/km
-- Malaysian driver included
-- Chinese-speaking driver: +RM300/day
-- Parking fees and driver's meals are excluded.
-
-VEHICLE CONFIGURATION: 12 extra-wide genuine leather seats, business-seat headrests, meeting table, wireless charging, 220V power sockets, refrigerator, thermal flask, independent air-conditioning, ambient lighting, and custom umbrellas.
-
-Only quote when the request clearly matches an approved package. State relevant exclusions when quoting. For unusual/multi-day trips, negotiations, or availability, escalate to a reservation specialist. Never claim availability, payment, or booking confirmation. Do not use Markdown symbols such as ** in customer-facing replies.`;
-
-async function saveLead(client:OpenAI,messages:any[],reply:string,leadId?:string){
- try{
-  const x=await client.chat.completions.create({model:process.env.OPENAI_MODEL||"gpt-5.6-luna",response_format:{type:"json_object"},messages:[
-   {role:"system",content:`Extract the sales lead from the conversation. Return JSON only with: service ("coaster","airport_transfer","other"), travel_date (YYYY-MM-DD or null), pax (integer or null), pickup (string or null), destination (string or null), itinerary (string or null), quoted_amount (number or null), status ("NEW","QUALIFYING","QUOTED"), ai_summary (short string), human_takeover (boolean). Use QUOTED only if an actual price was quoted. Use QUALIFYING when service intent is known but required details remain. Current date is 2026-09-28. Do not invent missing data.`},
-   {role:"user",content:JSON.stringify({conversation:messages,latest_assistant_reply:reply})}
-  ]});
-  const lead=JSON.parse(x.choices[0]?.message?.content||"{}");
-  lead.updated_at=new Date().toISOString();
-  let r:Response;
-  if(leadId)r=await supabase(`leads?id=eq.${encodeURIComponent(leadId)}`,{method:"PATCH",body:JSON.stringify(lead)});
-  else{lead.source="web_demo";r=await supabase("leads",{method:"POST",body:JSON.stringify(lead)})}
-  if(!r.ok)throw new Error(await r.text());
-  const rows=await r.json();return leadId||rows?.[0]?.id;
- }catch(e:any){console.error("Lead sync error:",e?.message);return leadId}
+export async function POST(req: Request) {
+  if (req.headers.get("origin") !== new URL(req.url).origin) return respond({ error: "Forbidden" }, 403);
+  if (!req.headers.get("content-type")?.includes("application/json")) return respond({ error: "JSON required" }, 415);
+  let input: ReturnType<typeof customerMessage>;
+  let issuedToken: string | undefined;
+  try {
+    const raw = await req.text();
+    if (raw.length > 20000) return respond({ error: "Request too large" }, 413);
+    input = customerMessage(JSON.parse(raw));
+  } catch { return respond({ error: "Invalid message or lead ID" }, 400); }
+  try {
+    const token = (await cookies()).get(CHAT_COOKIE)?.value;
+    const sessionHash = token && /^[A-Za-z0-9_-]{43}$/.test(token) ? hashToken(token) : undefined;
+    const sessions = sessionHash ? await jsonRows(`chat_sessions?token_hash=eq.${sessionHash}&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=lead_id`) : [];
+    let leadId: string | undefined = sessions[0]?.lead_id;
+    // Lead IDs are never credentials. Check ownership before AI calls or writes.
+    if (input.leadId && input.leadId !== leadId) return respond({ error: "Conversation not found" }, 403);
+    if (!(await consumeLimit(requestKey(req, "chat-ip"), 30, 600))) return respond({ error: "Please try again later" }, 429);
+    if (sessionHash && !(await consumeLimit("chat-session:" + sessionHash, 20, 600))) return respond({ error: "Please try again later" }, 429);
+    if (!(await consumeLimit("chat-global", 500, 86400))) return respond({ error: "Our team will assist you. Please try again later." }, 429);
+    if (!leadId) {
+      issuedToken = newToken();
+      const leads = await jsonRows("leads", { method: "POST", body: JSON.stringify({ source: "web_demo", status: "NEW" }) });
+      leadId = leads[0].id;
+      await jsonRows("chat_sessions", { method: "POST", body: JSON.stringify({ token_hash: hashToken(issuedToken), lead_id: leadId, expires_at: new Date(Date.now() + 86400000).toISOString() }) });
+    }
+    const lead = (await jsonRows(`leads?id=eq.${leadId}&select=human_takeover,status,updated_at`))[0];
+    if (!lead) return respond({ error: "Conversation unavailable" }, 404);
+    await jsonRows("messages", { method: "POST", body: JSON.stringify({ lead_id: leadId, role: "customer", content: input.text }) });
+    let reply = "Our reservation team will assist you shortly.";
+    if (!lead.human_takeover && process.env.OPENAI_API_KEY) {
+      const history: { role: string; content: string }[] = await jsonRows(`messages?lead_id=eq.${leadId}&select=role,content&order=created_at.desc&limit=30`);
+      const transcript = history.reverse().map(m => ({ role: m.role === "customer" ? "user" as const : "assistant" as const, content: m.content.slice(0, 4000) }));
+      const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, timeout: 22000, maxRetries: 0 });
+      const model = process.env.OPENAI_MODEL || "gpt-5.6-luna";
+      const result = await client.chat.completions.create({ model, max_completion_tokens: 800, messages: [{ role: "system", content: system }, ...transcript] });
+      reply = result.choices[0]?.message?.content?.slice(0, 6000) || reply;
+      try {
+        const extraction = await client.chat.completions.create({ model, max_completion_tokens: 600, response_format: { type: "json_object" }, messages: [
+          { role: "system", content: `Extract only service (coaster/airport_transfer/other), travel_date YYYY-MM-DD, pax, pickup, destination, itinerary, quoted_amount, status (NEW/QUALIFYING/QUOTED), ai_summary. Today is ${new Date().toISOString().slice(0, 10)}. Use null for unknowns. QUOTED only when an approved actual price was quoted. Never invent missing facts.` },
+          { role: "user", content: JSON.stringify({ transcript, reply }) }
+        ] });
+        const fields = extractedFields(JSON.parse(extraction.choices[0]?.message?.content || "{}"));
+        // Optimistic condition preserves concurrent staff edits and human takeover.
+        if (["NEW", "QUALIFYING", "QUOTED"].includes(lead.status)) await jsonRows(`leads?id=eq.${leadId}&human_takeover=eq.false&updated_at=eq.${encodeURIComponent(lead.updated_at)}`, { method: "PATCH", body: JSON.stringify({ ...fields, updated_at: new Date().toISOString() }) });
+      } catch { console.error("Lead extraction unavailable"); }
+      const current = (await jsonRows(`leads?id=eq.${leadId}&select=human_takeover`))[0];
+      if (current?.human_takeover) reply = "Our reservation team will assist you shortly.";
+    }
+    await jsonRows("messages", { method: "POST", body: JSON.stringify({ lead_id: leadId, role: "agent", content: reply }) });
+    const response = respond({ reply, leadId });
+    if (issuedToken) response.cookies.set(CHAT_COOKIE, issuedToken, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict", path: "/", maxAge: 86400 });
+    return response;
+  } catch {
+    console.error("Public chat request failed");
+    const response = respond({ error: "Chat is temporarily unavailable. Please try again.", reply: "Our reservation team can assist you. Please try again shortly." }, 503);
+    if (issuedToken) response.cookies.set(CHAT_COOKIE, issuedToken, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict", path: "/", maxAge: 86400 });
+    return response;
+  }
 }
-
-export async function POST(req:Request){try{
- const{messages=[],leadId}=await req.json();
- if(!process.env.OPENAI_API_KEY)return NextResponse.json({reply:"Demo UI is ready. Add OPENAI_API_KEY to enable live AI replies."});
- const client=new OpenAI({apiKey:process.env.OPENAI_API_KEY});
- const c=await client.chat.completions.create({model:process.env.OPENAI_MODEL||"gpt-5.6-luna",messages:[{role:"system",content:system},...messages.map((m:any)=>({role:m.role==="agent"?"assistant":"user",content:String(m.text)}))]});
- const reply=c.choices[0]?.message?.content||"Our reservation team will assist you.";
- const savedLeadId=await saveLead(client,messages,reply,leadId);if(savedLeadId){try{const newest=messages[messages.length-1];await supabase("messages",{method:"POST",body:JSON.stringify([{lead_id:savedLeadId,role:"customer",content:String(newest?.text||"")},{lead_id:savedLeadId,role:"agent",content:reply}])})}catch(e:any){console.error("Message sync error:",e?.message)}}
- return NextResponse.json({reply,leadId:savedLeadId});
-}catch(e:any){console.error("Tourplus chat API error:",e?.status,e?.code,e?.message);return NextResponse.json({reply:"I’m having trouble processing that right now. Our reservation team can assist you."},{status:500})}}

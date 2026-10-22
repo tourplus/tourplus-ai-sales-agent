@@ -5,17 +5,23 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
-    "next": "15.5.26",
+    "next": "15.5.28",
+    "openai": "^5.19.1",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "openai": "^5.19.1"
+    "server-only": "0.0.1"
   },
   "devDependencies": {
     "@types/node": "^22",
     "@types/react": "^19",
+    "tsx": "4.20.6",
     "typescript": "^5"
+  },
+  "overrides": {
+    "postcss": "8.5.31"
   }
 }

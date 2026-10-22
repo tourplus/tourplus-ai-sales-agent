@@ -1,3 +1,26 @@
-import{NextResponse}from"next/server";import{supabase}from"../../../lib/supabase";import{staffRequired}from"../../../lib/staff-auth";
-export async function GET(){if(!(await staffRequired()))return NextResponse.json({error:"Unauthorized"},{status:401});try{const r=await supabase("leads?select=*&order=created_at.desc");if(!r.ok)throw new Error("Database unavailable");return NextResponse.json(await r.json(),{headers:{"Cache-Control":"no-store"}})}catch{return NextResponse.json({error:"Unable to load leads"},{status:503})}}
-export async function POST(req:Request){if(!(await staffRequired()))return NextResponse.json({error:"Unauthorized"},{status:401});if(req.headers.get("origin")!==new URL(req.url).origin)return NextResponse.json({error:"Forbidden"},{status:403});try{const body=await req.json();const allowed=["customer_name","phone","source","service","travel_date","pax","pickup","destination","itinerary","status","assigned_staff","notes"];const data=Object.fromEntries(Object.entries(body).filter(([k])=>allowed.includes(k)));const r=await supabase("leads",{method:"POST",body:JSON.stringify(data)});if(!r.ok)throw new Error("Database unavailable");return NextResponse.json((await r.json())[0])}catch{return NextResponse.json({error:"Unable to create lead"},{status:500})}}
+import { errorResponse, privateJson, readJsonObject, requireSameOrigin, requireStaff } from "../../../lib/staff-auth";
+import { supabaseForUser } from "../../../lib/supabase";
+import { databaseError, leadSelection, validateLead } from "./validation";
+
+export const dynamic = "force-dynamic";
+
+export async function GET() {
+  try {
+    const staff = await requireStaff();
+    const owner = staff.role === "sales" ? `&assigned_staff_id=eq.${staff.id}` : "";
+    const response = await supabaseForUser(staff.accessToken, `leads?select=${leadSelection}&order=created_at.desc&limit=500${owner}`);
+    if (!response.ok) databaseError(response.status);
+    return privateJson(await response.json());
+  } catch (error) { return errorResponse(error); }
+}
+
+export async function POST(req: Request) {
+  try {
+    requireSameOrigin(req);
+    const staff = await requireStaff();
+    const data = await validateLead(await readJsonObject(req), staff, true);
+    const response = await supabaseForUser(staff.accessToken, `leads?select=${leadSelection}`, { method: "POST", body: JSON.stringify(data) });
+    if (!response.ok) databaseError(response.status);
+    return privateJson((await response.json())[0], 201);
+  } catch (error) { return errorResponse(error); }
+}

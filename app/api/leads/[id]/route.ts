@@ -1,4 +1,38 @@
-import{NextResponse}from"next/server";import{supabase}from"../../../../lib/supabase";import{staffRequired}from"../../../../lib/staff-auth";
-const valid=(id:string)=>/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(id);
-export async function GET(_:Request,{params}:{params:Promise<{id:string}>}){if(!(await staffRequired()))return NextResponse.json({error:"Unauthorized"},{status:401});try{const{id}=await params;if(!valid(id))return NextResponse.json({error:"Invalid ID"},{status:400});const[l,m]=await Promise.all([supabase(`leads?id=eq.${encodeURIComponent(id)}&select=*`),supabase(`messages?lead_id=eq.${encodeURIComponent(id)}&select=*&order=created_at.asc`)]);if(!l.ok||!m.ok)throw new Error("Fetch failed");const lead=(await l.json())[0];if(!lead)return NextResponse.json({error:"Not found"},{status:404});return NextResponse.json({lead,messages:await m.json()},{headers:{"Cache-Control":"no-store"}})}catch{return NextResponse.json({error:"Fetch failed"},{status:500})}}
-export async function PATCH(req:Request,{params}:{params:Promise<{id:string}>}){if(!(await staffRequired()))return NextResponse.json({error:"Unauthorized"},{status:401});if(req.headers.get("origin")!==new URL(req.url).origin)return NextResponse.json({error:"Forbidden"},{status:403});try{const{id}=await params;if(!valid(id))return NextResponse.json({error:"Invalid ID"},{status:400});const body=await req.json();const allowed=["customer_name","phone","status","assigned_staff","notes","next_follow_up_at","human_takeover"];const data=Object.fromEntries(Object.entries(body).filter(([k])=>allowed.includes(k)));data.updated_at=new Date().toISOString();const r=await supabase(`leads?id=eq.${encodeURIComponent(id)}`,{method:"PATCH",body:JSON.stringify(data)});if(!r.ok)throw new Error("Update failed");return NextResponse.json((await r.json())[0])}catch{return NextResponse.json({error:"Update failed"},{status:500})}}
+import { errorResponse, isUuid, privateJson, readJsonObject, RequestError, requireSameOrigin, requireStaff } from "../../../../lib/staff-auth";
+import { supabaseForUser } from "../../../../lib/supabase";
+import { databaseError, leadSelection, validateLead } from "../validation";
+
+type Context = { params: Promise<{ id: string }> };
+export const dynamic = "force-dynamic";
+
+export async function GET(_req: Request, { params }: Context) {
+  try {
+    const staff = await requireStaff();
+    const { id } = await params;
+    if (!isUuid(id)) throw new RequestError(400, "Invalid lead ID");
+    const owner = staff.role === "sales" ? `&assigned_staff_id=eq.${staff.id}` : "";
+    const response = await supabaseForUser(staff.accessToken, `leads?id=eq.${id}&select=${leadSelection}${owner}&limit=1`);
+    if (!response.ok) databaseError(response.status);
+    const lead = (await response.json())[0];
+    if (!lead) throw new RequestError(404, "Lead not found");
+    const messages = await supabaseForUser(staff.accessToken, `messages?lead_id=eq.${id}&select=id,lead_id,role,content,created_at&order=created_at.asc&limit=1000`);
+    if (!messages.ok) databaseError(messages.status);
+    return privateJson({ lead, messages: await messages.json() });
+  } catch (error) { return errorResponse(error); }
+}
+
+export async function PATCH(req: Request, { params }: Context) {
+  try {
+    requireSameOrigin(req);
+    const staff = await requireStaff();
+    const { id } = await params;
+    if (!isUuid(id)) throw new RequestError(400, "Invalid lead ID");
+    const data = await validateLead(await readJsonObject(req), staff, false);
+    const owner = staff.role === "sales" ? `&assigned_staff_id=eq.${staff.id}` : "";
+    const response = await supabaseForUser(staff.accessToken, `leads?id=eq.${id}&select=${leadSelection}${owner}`, { method: "PATCH", body: JSON.stringify(data) });
+    if (!response.ok) databaseError(response.status);
+    const lead = (await response.json())[0];
+    if (!lead) throw new RequestError(404, "Lead not found");
+    return privateJson(lead);
+  } catch (error) { return errorResponse(error); }
+}
