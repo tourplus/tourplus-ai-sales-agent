@@ -1,6 +1,7 @@
 import "server-only";
 import { isUuid, RequestError, type Staff } from "../../../lib/staff-auth";
 import { supabase } from "../../../lib/supabase";
+import { followUpTimestamp } from "../../../lib/follow-ups";
 
 const statuses = ["NEW", "QUALIFYING", "QUOTED", "FOLLOW_UP", "CONFIRMED", "LOST"];
 const services = ["airport_transfer", "coaster", "other"];
@@ -38,8 +39,7 @@ export async function validateLead(body: Record<string, unknown>, staff: Staff, 
       if (value !== null && (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(Date.parse(value)) || new Date(value).toISOString().slice(0, 10) !== value)) throw new RequestError(400, "Invalid travel date");
       data[key] = value;
     } else if (key === "next_follow_up_at") {
-      if (value !== null && (typeof value !== "string" || value.length > 40 || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value) || !Number.isFinite(Date.parse(value)))) throw new RequestError(400, "Invalid follow-up date");
-      data[key] = typeof value === "string" ? new Date(value).toISOString() : null;
+      try { data[key] = followUpTimestamp(value); } catch { throw new RequestError(400, "Invalid follow-up date or missing timezone"); }
     }
   }
   if (staff.role === "sales") {
@@ -60,7 +60,7 @@ export async function validateLead(body: Record<string, unknown>, staff: Staff, 
   return data;
 }
 
-export const leadSelection = "id,customer_name,phone,source,social_handle,service,travel_date,pax,pickup,destination,itinerary,quoted_amount,status,ai_summary,human_takeover,assigned_staff,assigned_staff_id,notes,next_follow_up_at,created_at,updated_at";
+export const leadSelection = "id,customer_name,phone,source,social_handle,service,travel_date,pax,pickup,destination,itinerary,quoted_amount,status,ai_summary,human_takeover,assigned_staff,assigned_staff_id,notes,next_follow_up_at,last_follow_up_at,created_at,updated_at";
 
 export function databaseError(status: number) {
   if (status === 401) throw new RequestError(401, "Please sign in again");

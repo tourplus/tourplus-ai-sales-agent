@@ -1,28 +1,24 @@
-import { errorResponse, privateJson, RequestError, requireStaff } from "../../../../lib/staff-auth";
-import { supabase, supabaseConfig } from "../../../../lib/supabase";
+import { errorResponse, privateJson, RequestError } from "../../../../lib/staff-auth";
+import { authIdentity, publicMember, requireAdmin, staffColumns, type StaffRow } from "../../../../lib/staff-management";
+import { supabase } from "../../../../lib/supabase";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const staff = await requireStaff();
-    if (staff.role !== "admin") throw new RequestError(403, "Admin access required");
-    const response = await supabase("staff_members?active=eq.true&select=user_id,role&order=created_at.asc&limit=100");
+    await requireAdmin();
+    const query = new URL(req.url).searchParams;
+    if ([...query.keys()].some(key => key !== "include_inactive") || (query.has("include_inactive") && !["true", "false"].includes(query.get("include_inactive") || ""))) throw new RequestError(400, "Invalid staff filter");
+    const filter = query.get("include_inactive") === "true" ? "" : "active=eq.true&";
+    const response = await supabase(`staff_members?${filter}select=${staffColumns}&order=created_at.asc&limit=500`);
     if (!response.ok) throw new RequestError(503, "Unable to load staff members");
-    const members: { user_id: string; role: string; email?: string }[] = await response.json();
-    const { url } = supabaseConfig();
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if (!key) throw new RequestError(503, "Staff access is temporarily unavailable");
-    // Resolve only the already authorized staff IDs, never expose auth user records.
-    await Promise.all(members.map(async member => {
-      const auth = await fetch(`${url}/auth/v1/admin/users/${member.user_id}`, {
-        headers: { apikey: key, Authorization: `Bearer ${key}` }, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(15000),
-      });
-      if (auth.ok) {
-        const user = await auth.json();
-        if (typeof user?.email === "string") member.email = user.email;
-      }
-    }));
+    const rows: StaffRow[] = await response.json();
+    const members = [];
+    // Bound concurrent Auth requests while preserving complete account status.
+    for (let offset = 0; offset < rows.length; offset += 10) {
+      const batch = await Promise.all(rows.slice(offset, offset + 10).map(async row => publicMember(row, await authIdentity(row.user_id))));
+      members.push(...batch);
+    }
     return privateJson({ members });
   } catch (error) { return errorResponse(error); }
 }

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { staffError, staffFetch, staffJson, type StaffSession } from "../../lib/staff-fetch";
+import CrmNav from "../components/crm-nav";
 type Lead = { id: string; customer_name?: string; source?: string; social_handle?: string; service: string; travel_date?: string; pax?: number; quoted_amount?: number; status: string; assigned_staff?: string; human_takeover: boolean; created_at: string };
 const channelName = (source?: string) => ({ whatsapp: "WhatsApp", facebook: "Facebook", instagram: "Instagram", xiaohongshu: "小红书", website: "Website", web_demo: "Website Demo" }[source || ""] || source || "Unknown");
 export default function Dashboard() {
@@ -30,7 +31,8 @@ export default function Dashboard() {
   const statuses = ["NEW", "QUALIFYING", "QUOTED", "FOLLOW_UP", "CONFIRMED", "LOST"];
   const shown = source === "all" ? leads : leads.filter(lead => lead.source === source);
   return <main>
-    <section className="hero compact"><div><b>TOURPLUS</b><span>OMNICHANNEL SALES CRM · V1.3 SECURITY</span></div><h1>Lead Dashboard</h1><p>Facebook · Instagram · WhatsApp · 小红书 · Website</p>{user && <p>{user.email} · {user.role === "admin" ? "Admin" : "Sales"}{user.role === "sales" && " · Your assigned leads"}</p>}<button type="button" onClick={logout} disabled={signingOut}>{signingOut ? "Signing out…" : "Sign out"}</button></section>
+    <section className="hero compact"><div><b>TOURPLUS</b><span>OMNICHANNEL SALES CRM · V1.4</span></div><h1>Lead Dashboard</h1><p>Facebook · Instagram · WhatsApp · 小红书 · Website</p>{user && <p>{user.email} · {user.role === "admin" ? "Admin" : "Sales"}{user.role === "sales" && " · Your assigned leads"}</p>}<button type="button" onClick={logout} disabled={signingOut}>{signingOut ? "Signing out…" : "Sign out"}</button></section>
+    <CrmNav role={user?.role} />
     {error && <p role="alert">{error}</p>}
     {loading ? <p role="status">Loading leads…</p> : !error && <>
       <div className="channels">{["all", "whatsapp", "facebook", "instagram", "xiaohongshu", "website", "web_demo"].map(channel => <button type="button" key={channel} className={source === channel ? "active" : ""} onClick={() => setSource(channel)}>{channel === "all" ? "All Channels" : channelName(channel)} <b>{channel === "all" ? leads.length : leads.filter(lead => lead.source === channel).length}</b></button>)}</div>

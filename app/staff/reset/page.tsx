@@ -16,7 +16,7 @@ export default function ResetPassword() {
     const fragment = new URLSearchParams(window.location.hash.slice(1));
     window.history.replaceState(null, "", window.location.pathname + window.location.search);
     const token = fragment.get("access_token");
-    if (fragment.get("type") === "recovery" && token) setAccessToken(token);
+    if (["recovery", "invite"].includes(fragment.get("type") || "") && token) setAccessToken(token);
     else setError("This password link is invalid or expired. Request a new link from the sign-in page.");
     setReady(true);
   }, []);

@@ -131,7 +131,7 @@ try {
 
   await check('production_health', async () => {
     const result = await stranger.call('/api/health');
-    assert(result.status === 200 && result.body?.status === 'ok' && result.body?.version === '1.3-security', 'Production health failed');
+    assert(result.status === 200 && result.body?.status === 'ok' && result.body?.version === '1.4-crm', 'Production health failed');
     assert((await stranger.call('/')).status === 200, 'Public demo page failed');
     assert((await stranger.call('/staff/login')).status === 200, 'Staff login page failed');
   });

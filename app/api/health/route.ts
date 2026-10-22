@@ -6,7 +6,7 @@ export async function GET() {
     if (!process.env.SUPABASE_ANON_KEY || !process.env.OPENAI_API_KEY) throw new Error();
     const r = await supabase("staff_members?select=user_id&limit=0");
     if (!r.ok) throw new Error();
-    return NextResponse.json({ status: "ok", version: "1.3-security" }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ status: "ok", version: "1.4-crm" }, { headers: { "Cache-Control": "no-store" } });
   } catch {
     return NextResponse.json({ status: "unavailable" }, { status: 503, headers: { "Cache-Control": "no-store" } });
   }
