@@ -174,7 +174,7 @@ try {
     const detail = await admin.browser.call(`/api/leads/${adminLead.id}`);
     assert(detail.status === 200 && detail.body?.lead?.id === adminLead.id, 'Admin detail failed');
     const page = await admin.browser.call(`/dashboard/${adminLead.id}`);
-    assert(page.status === 200 && page.html.includes('Lead'), 'Authenticated lead detail page failed');
+    assert(page.status === 200 && page.html.includes('Loading lead'), 'Authenticated lead detail page failed');
     const updated = await admin.browser.call(`/api/leads/${adminLead.id}`, 'PATCH', { notes: marker, status: 'FOLLOW_UP', human_takeover: true });
     assert(updated.status === 200, 'Admin update failed');
     const reread = await admin.browser.call(`/api/leads/${adminLead.id}`);
