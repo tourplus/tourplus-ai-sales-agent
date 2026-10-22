@@ -251,6 +251,8 @@ try {
     assert(first.status === 200 && typeof first.body?.leadId === 'string' && typeof first.body?.reply === 'string' && first.body.reply.length > 10, 'Real public AI chat failed');
     assert(first.body.reply !== 'Our reservation team will assist you shortly.', 'AI generation used only the fallback reply');
     assert(visitor.cookies.has('tp_chat_session'), 'Public chat ownership cookie missing');
+    const extracted = await admin.browser.call(`/api/leads/${first.body.leadId}`);
+    assert(extracted.status === 200 && extracted.body?.lead?.service === 'airport_transfer' && typeof extracted.body?.lead?.ai_summary === 'string' && extracted.body.lead.ai_summary.trim().length > 0, 'AI lead extraction was not persisted');
     const cookieHeaders = first.response.headers.getSetCookie().join(';');
     assert(/httponly/i.test(cookieHeaders) && /secure/i.test(cookieHeaders) && /samesite=strict/i.test(cookieHeaders), 'Public chat cookie protection missing');
     assert((await visitor.call('/api/chat', 'POST', { leadId: adminLead.id, message: marker })).status === 403, 'Visitor accessed another lead');

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { customerMessage, extractedFields } from "../lib/chat-validation";
+import { customerMessage, extractedFields, extractionFields, LeadExtractionError } from "../lib/chat-validation";
 
 test("accepts only a bounded customer message and exact UUID", () => {
   assert.deepEqual(customerMessage({ message: " Hello " }), { text: "Hello", leadId: undefined });
@@ -22,4 +22,17 @@ test("extraction bounds text and rejects malformed values", () => {
   assert.deepEqual(extractedFields([]), {});
   assert.equal(extractedFields({ ai_summary: "x".repeat(5000) }).ai_summary?.toString().length, 4000);
   assert.deepEqual(extractedFields({ pax: 0, service: "unknown", travel_date: "not-a-date", quoted_amount: Infinity }), {});
+});
+
+test("extraction rejects impossible dates and strips database-invalid control characters", () => {
+  assert.deepEqual(extractedFields({ travel_date: "2027-02-29" }), {});
+  assert.deepEqual(extractedFields({ travel_date: "2028-02-29", pickup: "KL\u0000IA", ai_summary: "   " }), { travel_date: "2028-02-29", pickup: "KLIA" });
+});
+
+test("complete extraction must provide service, status and a useful summary", () => {
+  const content = JSON.stringify({ service: "airport_transfer", status: "QUALIFYING", ai_summary: "Customer asks about an airport transfer.", assigned_staff_id: "attacker" });
+  assert.deepEqual(extractionFields({ finish_reason: "stop", message: { content } }), { service: "airport_transfer", status: "QUALIFYING", ai_summary: "Customer asks about an airport transfer." });
+  for (const choice of [undefined, { finish_reason: "length", message: { content } }, { finish_reason: "stop", message: { content: "{" } }, { finish_reason: "stop", message: { content: "{}" } }, { finish_reason: "stop", message: { content, refusal: "declined" } }]) {
+    assert.throws(() => extractionFields(choice), LeadExtractionError);
+  }
 });
