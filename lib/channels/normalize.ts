@@ -1,5 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import type { Channel, ChannelAccount, ChannelAttachment, DeliveryStatus, NormalizedEvent } from "./types";
+import type { Channel, ChannelAccount, ChannelAttachment, DeliveryStatus, NormalizedEvent, PageEcho } from "./types";
 
 export class ChannelPayloadError extends Error {
   constructor(public status = 400) { super(status === 403 ? "Channel account is not authorized" : "Invalid channel event"); }
@@ -108,7 +108,22 @@ export function normalizeMetaPayload(channel: Channel, payload: unknown, account
         const occurredAt = instant(item.timestamp || entry.time);
         if (item.message) {
           const message = object(item.message), mid = messageId(message.mid);
-          if (echo) { emit({ kind: "status", channel, accountId, eventId: `echo:${hash(mid)}`, providerMessageId: mid, status: "sent", occurredAt, clientReference: reference(message.metadata), customerId: recipientId }); continue; }
+          if (echo) {
+            // Only our configured App ID identifies our own send independently
+            // of the response/echo race. Other Page senders pause automation.
+            let pageEcho: PageEcho | undefined;
+            if (channel === "facebook") {
+              const appId = typeof message.app_id === "string" ? message.app_id : Number.isSafeInteger(message.app_id) ? String(message.app_id) : undefined;
+              const application = !!selected.appId && appId === selected.appId;
+              const attachments = array(message.attachments || [], 20).map(attachment);
+              const text = message.text !== undefined ? clean(message.text) : `[${attachments[0]?.type || "Page reply"} sent — review in the channel inbox]`;
+              pageEcho = { source: application ? "application" : "external", text, attachments };
+            }
+            emit({ kind: "status", channel, accountId, eventId: `echo:${hash(mid)}`, providerMessageId: mid, status: "sent", occurredAt,
+              clientReference: reference(message.metadata), customerId: recipientId,
+              ...(pageEcho ? { echo: pageEcho } : {}) });
+            continue;
+          }
           const attachments = array(message.attachments || [], 20).map(attachment);
           const text = message.text !== undefined ? clean(message.text) : `[${attachments[0]?.type || "Unsupported message"} received — review in the channel inbox]`;
           emit({ kind: "message", channel, accountId, eventId: `message:${hash(mid)}`, providerMessageId: mid, senderId, text, occurredAt, attachments,

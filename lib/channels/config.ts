@@ -48,8 +48,9 @@ export function getChannelConfiguration(env: Record<string, string | undefined> 
     const accessToken = env[secretName(item.tokenEnv, `META_${item.channel.toUpperCase()}_ACCESS_TOKEN`)] || "";
     const apiVersion = item.apiVersion || "";
     if (apiVersion && !/^v\d{1,3}\.\d+$/.test(apiVersion)) fail();
+    if (item.appId !== undefined && !identifier(item.appId)) fail();
     return { channel: item.channel, accountId: item.accountId, label: item.label, enabled: item.enabled === true,
-      appSecret, verifyToken, accessToken, apiVersion, instagramLogin: item.instagramLogin !== false, aiMode,
+      appSecret, verifyToken, accessToken, apiVersion, appId: item.appId, instagramLogin: item.instagramLogin !== false, aiMode,
       liveSendEnabled: env.CHANNELS_LIVE_SEND_ENABLED === "true" && item.liveSendEnabled === true,
       allowedRecipients: [...new Set(allowedRecipients)] as string[], templates: templates(item.templates), mode: mode as ChannelConfiguration["mode"], sandboxUrl };
   });
@@ -59,7 +60,7 @@ export function accountFor(channel: Channel, accountId: string, configuration = 
   return configuration.accounts.find(account => account.channel === channel && account.accountId === accountId);
 }
 export function accountMissing(account: ChannelAccount) {
-  return [!account.enabled && "enabled", !account.appSecret && "app secret", !account.verifyToken && "webhook verify token", !account.accessToken && "access token", !account.apiVersion && "API version", !account.allowedRecipients.length && "pilot recipients"].filter(Boolean) as string[];
+  return [!account.enabled && "enabled", !account.appSecret && "app secret", !account.verifyToken && "webhook verify token", !account.accessToken && "access token", !account.apiVersion && "API version", account.channel === "facebook" && !account.appId && "app ID", !account.allowedRecipients.length && "pilot recipients"].filter(Boolean) as string[];
 }
 export function accountCanSend(account: ChannelAccount) {
   return account.mode !== "disabled" && !accountMissing(account).length && (account.mode === "sandbox" || account.liveSendEnabled);
@@ -72,6 +73,6 @@ export function templateAllowed(account: ChannelAccount, template: ChannelTempla
 export function safeChannelHealth() {
   const configuration = getChannelConfiguration();
   return { mode: configuration.mode, accounts: configuration.accounts.map(account => ({ channel: account.channel, accountId: account.accountId, label: account.label,
-    configured: account.enabled && !!account.appSecret && !!account.verifyToken && !!account.accessToken && !!account.apiVersion,
+    configured: account.enabled && !!account.appSecret && !!account.verifyToken && !!account.accessToken && !!account.apiVersion && (account.channel !== "facebook" || !!account.appId),
     canSend: accountCanSend(account), aiMode: account.aiMode, missing: accountMissing(account), templates: account.templates })) };
 }

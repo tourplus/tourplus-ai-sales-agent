@@ -31,7 +31,7 @@ export default function Dashboard() {
   const statuses = ["NEW", "QUALIFYING", "QUOTED", "FOLLOW_UP", "CONFIRMED", "LOST"];
   const shown = source === "all" ? leads : leads.filter(lead => lead.source === source);
   return <main>
-    <section className="hero compact"><div><b>TOURPLUS</b><span>OMNICHANNEL SALES CRM · V1.4</span></div><h1>Lead Dashboard</h1><p>Facebook · Instagram · WhatsApp · 小红书 · Website</p>{user && <p>{user.email} · {user.role === "admin" ? "Admin" : "Sales"}{user.role === "sales" && " · Your assigned leads"}</p>}<button type="button" onClick={logout} disabled={signingOut}>{signingOut ? "Signing out…" : "Sign out"}</button></section>
+    <section className="hero compact"><div><b>TOURPLUS</b><span>OMNICHANNEL SALES CRM · V1.5</span></div><h1>Lead Dashboard</h1><p>Facebook · Instagram · WhatsApp · 小红书 · Website</p>{user && <p>{user.email} · {user.role === "admin" ? "Admin" : "Sales"}{user.role === "sales" && " · Your assigned leads"}</p>}<button type="button" onClick={logout} disabled={signingOut}>{signingOut ? "Signing out…" : "Sign out"}</button></section>
     <CrmNav role={user?.role} />
     {error && <p role="alert">{error}</p>}
     {loading ? <p role="status">Loading leads…</p> : !error && <>

@@ -11,7 +11,7 @@ export type FixtureChannel = keyof typeof channelAccounts;
 export function sandboxAccounts(origin: string, aiMode: ChannelAccount["aiMode"] = "auto"): ChannelAccount[] {
   return (["whatsapp", "facebook", "instagram"] as const).map(channel => ({
     channel, accountId: channelAccounts[channel], label: `Offline ${channel}`, enabled: true,
-    appSecret, verifyToken: "offline-verify-token", accessToken: providerToken, apiVersion: "v25.0",
+    appSecret, verifyToken: "offline-verify-token", accessToken: providerToken, apiVersion: "v25.0", appId: "900000000000010",
     instagramLogin: true, aiMode, liveSendEnabled: false, allowedRecipients: ["*"],
     templates: [{ name: "reservation_followup", language: "en", parameterCount: 0 }], mode: "sandbox", sandboxUrl: origin,
   }));

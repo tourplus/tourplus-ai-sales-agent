@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { PGlite, type Transaction } from "@electric-sql/pglite";
 import type { AIClaim, NormalizedMessage, NormalizedStatus, OutboundClaim, OutboxRow, PreparedOutbound, ReceiveResult, SendResult } from "../../lib/channels/store";
@@ -41,7 +41,9 @@ export async function createIsolatedDatabase(options: { includeChannels?: boolea
   const database = await PGlite.create();
   try {
     await database.exec(bootstrap);
-    const migrations = ["schema.sql", "v1.2.sql", "v1.3a.sql", "security.sql", "v1.4.sql", ...(options.includeChannels === false ? [] : ["v1.5.sql"])];
+    const channelMigrations = options.includeChannels === false ? [] : (await readdir(resolve("supabase", "migrations"))).filter(name => /^\d+_channel_native_page_echo\.sql$/.test(name)).map(name => `migrations/${name}`);
+    if (options.includeChannels !== false && channelMigrations.length !== 1) throw new Error("Expected one native Page echo migration");
+    const migrations = ["schema.sql", "v1.2.sql", "v1.3a.sql", "security.sql", "v1.4.sql", ...(options.includeChannels === false ? [] : ["v1.5.sql", ...channelMigrations])];
     for (const filename of migrations) {
       let sql = await readFile(resolve("supabase", filename), "utf8");
       // gen_random_uuid() is built into PostgreSQL. PGlite does not need the

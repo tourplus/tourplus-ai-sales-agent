@@ -1,5 +1,6 @@
 import "server-only";
 import { supabase, supabaseForUser } from "../supabase";
+import type { PageEcho } from "./types";
 
 export type Channel = "whatsapp" | "facebook" | "instagram";
 export type AIMode = "off" | "draft" | "auto";
@@ -13,7 +14,7 @@ export type NormalizedMessage = {
 export type NormalizedStatus = {
   kind: "status"; channel: Channel; accountId: string; eventId: string;
   providerMessageId: string; status: "sent" | "delivered" | "read" | "failed";
-  occurredAt: string; errorCode?: string; clientReference?: string; customerId?: string; watermark?: string;
+  occurredAt: string; errorCode?: string; clientReference?: string; customerId?: string; watermark?: string; echo?: PageEcho;
 };
 export type ChannelAccountConfiguration = {
   channel: Channel; accountId: string; enabled: boolean; aiMode: AIMode;

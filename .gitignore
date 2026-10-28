@@ -5,3 +5,4 @@ node_modules/
 !.env.example
 *.tsbuildinfo
 test-results/
+supabase/.temp/
