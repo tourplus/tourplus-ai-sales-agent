@@ -37,3 +37,14 @@ test("activity labels describe recorded source and action", () => {
   assert.equal(activitySource("ai"), "AI chat");
   assert.equal(activityFieldName("last_follow_up_at"), "Last follow-up");
 });
+
+test("channel activity shows safe event details without identifiers or payload fields", () => {
+  const change = { before: null, after: { channel: "whatsapp", direction: "inbound", status: "delivered", messageId: "private-message-uuid", outboxId: "private-outbox-uuid", content: "private content" } };
+  assert.deepEqual(activityFields({ channel_message: change }), [["channel_message", change]]);
+  assert.equal(activityFieldName("channel_message"), "Channel message");
+  assert.equal(activityValue("channel_message", change.after), "WhatsApp · Incoming message · Delivered");
+  assert.equal(activityValue("channel_message", { outboxId: "private-outbox-uuid", status: "unknown" }), "Needs reconciliation");
+  assert.equal(activityValue("channel_message", { channel: "private-uuid", status: "unexpected private data" }), "Channel message event");
+  assert.equal(activityValue("channel_message", { channel: "constructor", status: "__proto__" }), "Channel message event");
+  assert.equal(activityValue("channel_message", "private-uuid"), "Channel message event");
+});

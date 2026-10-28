@@ -1,6 +1,12 @@
 # Tourplus AI Sales Agent
 
-V1.3 Security — AI-assisted sales qualification with protected staff CRM.
+V1.4 staff CRM with a V1.5 keyless channel implementation for isolated testing.
+
+WhatsApp, Facebook Messenger and Instagram connectors are disabled by default.
+The implementation/test/activation guide is [docs/channel-setup.md](docs/channel-setup.md).
+Run `npm test` for isolated PostgreSQL and mock HTTP integration tests; no
+production credentials are needed. Local implementation does not mean that
+the production channel accounts are connected or verified.
 
 ## Access
 
@@ -22,11 +28,14 @@ names in Vercel Production. `SUPABASE_ANON_KEY` accepts the recommended Supabase
 publishable key. `SUPABASE_SERVICE_ROLE_KEY` and `OPENAI_API_KEY` must stay in
 server-only secret variables. Never prefix a secret with `NEXT_PUBLIC_`.
 
-Apply `supabase/schema.sql`, `supabase/v1.2.sql`, `supabase/v1.3a.sql`, then
-`supabase/security.sql` in order. The security patch preserves existing data.
+Apply `supabase/schema.sql`, `supabase/v1.2.sql`, `supabase/v1.3a.sql`,
+`supabase/security.sql`, then `supabase/v1.4.sql` in order. The security patch
+preserves existing data. V1.5 adds `supabase/v1.5.sql`; apply it only to an
+isolated staging database until the channel activation checks pass.
 Create staff identities through Supabase Auth, then insert their UUID into
 `staff_members` with `role = 'admin'` or `'sales'` using a privileged connection.
-Public signup does not grant CRM access. There is no public role-management API.
+Public signup does not grant CRM access. Staff invitations and role changes
+require an active Admin; protected database checks prevent self-lockout.
 
 For password recovery, set the Supabase Auth Site URL to the production domain
 and allow `https://tourplus-ai-sales-agent.vercel.app/staff/reset` in Auth URL

@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import { staffError, staffFetch, staffJson, type StaffMember, type StaffSession } from "../../../lib/staff-fetch";
 import CrmNav from "../../components/crm-nav";
 import LeadActivity from "../../components/lead-activity";
+import ChannelConversation from "../../components/channel-conversation";
 import { formatFollowUp, malaysiaDateInput, malaysiaInputToUtc } from "../../../lib/follow-ups";
 type LeadRecord = { id: string; customer_name?: string; service?: string; pax?: number; travel_date?: string; quoted_amount?: number; pickup?: string; destination?: string; ai_summary?: string; status: string; assigned_staff?: string | null; assigned_staff_id?: string | null; notes?: string | null; human_takeover: boolean; next_follow_up_at?: string | null; last_follow_up_at?: string | null; updated_at: string };
 type LeadData = { lead: LeadRecord; messages: { id: string; role: string; content: string }[] };
@@ -71,6 +72,10 @@ export default function Lead() {
       {user?.role === "admin" ? <label>Assigned Staff<select value={lead.assigned_staff_id || ""} disabled={saving || members.length === 0} onChange={event => { const member = members.find(item => item.user_id === event.target.value); void save({ assigned_staff_id: event.target.value || null, assigned_staff: member?.email || member?.user_id || null }); }}><option value="">Unassigned</option>{lead.assigned_staff_id && !assignedMember && <option value={lead.assigned_staff_id}>{lead.assigned_staff || lead.assigned_staff_id} (current)</option>}{members.map(member => <option key={member.user_id} value={member.user_id}>{member.email || member.user_id} · {member.role === "admin" ? "Admin" : "Sales"}</option>)}</select></label> : <p><b>Assigned Staff</b><br />{lead.assigned_staff_id === user?.id ? "You" : lead.assigned_staff || "Unassigned"}</p>}
       <label>Notes<textarea value={notes} disabled={saving} onChange={event => setNotes(event.target.value)} maxLength={10000} /></label><button type="button" onClick={() => void save({ notes })} disabled={saving || notes === (lead.notes || "")}>Save notes</button>{" "}<button type="button" disabled={saving} onClick={() => void save({ human_takeover: !lead.human_takeover })}>{lead.human_takeover ? "Return to AI" : "Human Takeover"}</button>{saving && <small role="status"> Saving…</small>}
     </div><div className="crmcard"><h2>Conversation</h2>{data.messages?.length ? data.messages.map(message => <div className="transcript" key={message.id}><small>{message.role}</small><p>{message.content}</p></div>) : <p>No stored messages yet.</p>}</div></section>
+    <ChannelConversation leadId={id} humanTakeover={lead.human_takeover} onChanged={async () => {
+      try { setData(await staffJson<LeadData>("/api/leads/" + encodeURIComponent(id))); setActivityRevision(value => value + 1); }
+      catch (reason) { setError(staffError(reason)); }
+    }} />
     <LeadActivity leadId={id} refreshKey={activityRevision} />
   </main>;
 }

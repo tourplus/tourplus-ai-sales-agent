@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "tsx --test tests/*.test.ts"
+    "test": "node --wasm-num-compilation-tasks=1 --liftoff-only --no-wasm-tier-up --wasm-lazy-compilation --max-old-space-size=4096 --import tsx --test --test-concurrency=1 tests/*.test.ts",
+    "test:channels": "node --wasm-num-compilation-tasks=1 --liftoff-only --no-wasm-tier-up --wasm-lazy-compilation --max-old-space-size=4096 --import tsx --test --test-concurrency=1 tests/channel-integration.test.ts"
   },
   "dependencies": {
     "next": "15.5.28",
@@ -16,6 +17,7 @@
     "server-only": "0.0.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.11",
     "@types/node": "^22",
     "@types/react": "^19",
     "tsx": "4.20.6",
