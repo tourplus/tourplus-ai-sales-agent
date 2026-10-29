@@ -7,6 +7,11 @@ import { asService, asStaff, createIsolatedDatabase, isolatedChannelStore } from
 
 const migrationPath = resolve("supabase/migrations/20261028074544_channel_worker_schedule.sql");
 
+// Historical migration coverage only: this source was already applied and must
+// remain immutable. Its owner-controlled stubs do NOT establish native platform
+// ACLs or make its legacy Bearer dispatch safe. Apply the signed corrective
+// migration too; channel-worker-signed-dispatch.test.ts reproduces readable
+// native queue grants and verifies that the corrected dispatch exposes no key.
 // These local transport/scheduler/Vault stand-ins test PostgreSQL permissions,
 // SQL dispatch arguments and inactive scheduling only. They do not implement
 // encryption, background scheduling, or HTTP networking, and prove none of those
@@ -38,7 +43,7 @@ const stubModules = `
   end$$;
 `;
 
-test("worker minute schedule SQL contract with stubbed extensions; no live cron or HTTP", { timeout: 120000 }, async t => {
+test("historical inactive scheduler migration with owner-controlled stubs; no native ACL or HTTP proof", { timeout: 120000 }, async t => {
   const database = await createIsolatedDatabase();
   t.after(() => database.close());
   const sql = await readFile(migrationPath, "utf8");
@@ -85,7 +90,7 @@ test("worker minute schedule SQL contract with stubbed extensions; no live cron 
     assert.doesNotMatch(sql, new RegExp(secret));
   });
 
-  await t.test("browser roles cannot inspect queue/Vault/cron or invoke dispatch; existing service Vault grants remain", async () => {
+  await t.test("owner-controlled stub ACLs deny browser access; this is not a native platform ACL assertion", async () => {
     for (const query of ["select * from net.http_request_queue", "select * from cron.job", "select * from vault.decrypted_secrets", "select * from security_private.channel_worker_dispatches", "select security_private.dispatch_channel_worker()"]) {
       await assert.rejects(() => asStaff(database, "sales", tx => tx.query(query)), (error: { code?: string }) => error.code === "42501");
     }
