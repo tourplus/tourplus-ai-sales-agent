@@ -13,6 +13,7 @@ export async function POST(req: Request) {
   if (!req.headers.get("content-type")?.includes("application/json")) return respond({ error: "JSON required" }, 415);
   let input: ReturnType<typeof customerMessage>;
   let issuedToken: string | undefined;
+  let phase = "session";
   try {
     const raw = await req.text();
     if (raw.length > 20000) return respond({ error: "Request too large" }, 413);
@@ -43,6 +44,7 @@ export async function POST(req: Request) {
       const transcript = history.reverse().map(m => ({ role: m.role === "customer" ? "user" as const : "assistant" as const, content: m.content.slice(0, 4000) }));
       const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, timeout: 22000, maxRetries: 0 });
       const model = process.env.OPENAI_MODEL || "gpt-5.6-luna";
+      phase = "reply-provider";
       const result = await client.chat.completions.create({ model, max_completion_tokens: 800, messages: [{ role: "system", content: system }, ...transcript] });
       reply = result.choices[0]?.message?.content?.slice(0, 6000) || reply;
       let extractionPhase = "provider";
@@ -73,12 +75,17 @@ export async function POST(req: Request) {
       const current = (await jsonRows(`leads?id=eq.${leadId}&select=human_takeover`))[0];
       if (current?.human_takeover) reply = "Our reservation team will assist you shortly.";
     }
+    phase = "save-reply";
     await jsonRows("messages", { method: "POST", body: JSON.stringify({ lead_id: leadId, role: "agent", content: reply }) });
     const response = respond({ reply, leadId });
     if (issuedToken) response.cookies.set(CHAT_COOKIE, issuedToken, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict", path: "/", maxAge: 86400 });
     return response;
-  } catch {
-    console.error("Public chat request failed");
+  } catch (error) {
+    const codes = ["invalid_api_key", "model_not_found", "insufficient_quota", "rate_limit_exceeded", "unsupported_parameter", "invalid_request_error", "server_error"];
+    // Never log provider messages, transcript content, cookies or credentials.
+    console.error("Public chat request failed", error instanceof OpenAI.APIError
+      ? { phase, category: "provider", status: error.status, code: codes.includes(error.code || "") ? error.code : "other" }
+      : { phase, category: "internal" });
     const response = respond({ error: "Chat is temporarily unavailable. Please try again.", reply: "Our reservation team can assist you. Please try again shortly." }, 503);
     if (issuedToken) response.cookies.set(CHAT_COOKIE, issuedToken, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict", path: "/", maxAge: 86400 });
     return response;
